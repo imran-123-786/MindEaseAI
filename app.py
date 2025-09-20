@@ -3,14 +3,23 @@ import google.generativeai as genai
 import sqlite3
 import speech_recognition as sr
 import pyttsx3
+import threading
+import queue
 from datetime import datetime
+from dotenv import load_dotenv
 import os
 
 # ----------------------------
-# Configure Gemini (API key via env variable)
+# Load API Key Safely
 # ----------------------------
-genai.configure(api_key=os.getenv("GEMINI_API_KEY", "your_api_key_here"))
-model = genai.GenerativeModel("gemini-1.5-flash")
+load_dotenv()  # loads .env file
+api_key = os.getenv("GOOGLE_API_KEY")
+
+if not api_key:
+    st.error("❌ API key not found! Please set GOOGLE_API_KEY in .env file.")
+else:
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel("gemini-1.5-flash")
 
 # ----------------------------
 # Database Setup
@@ -32,16 +41,24 @@ c.execute("""CREATE TABLE IF NOT EXISTS chats (
 conn.commit()
 
 # ----------------------------
-# Voice Output (Safe Function)
+# Voice Output (Safe Queue System)
 # ----------------------------
-def speak(text):
-    try:
-        engine = pyttsx3.init()
+speech_queue = queue.Queue()
+
+def speech_worker():
+    engine = pyttsx3.init()
+    while True:
+        text = speech_queue.get()
+        if text is None:
+            break
         engine.say(text)
         engine.runAndWait()
-        engine.stop()
-    except Exception as e:
-        print(f"TTS error: {e}")
+        speech_queue.task_done()
+
+threading.Thread(target=speech_worker, daemon=True).start()
+
+def speak(text):
+    speech_queue.put(text)
 
 # ----------------------------
 # Gemini Chat Function
