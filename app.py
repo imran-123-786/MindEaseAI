@@ -3,14 +3,13 @@ import google.generativeai as genai
 import sqlite3
 import speech_recognition as sr
 import pyttsx3
-import threading
-import queue
 from datetime import datetime
+import os
 
 # ----------------------------
-# Configure Gemini
+# Configure Gemini (API key via env variable)
 # ----------------------------
-genai.configure(api_key="AIzaSyCNEhlc2YGnW1guh9k3OU1DMyPK1o7xBB0")
+genai.configure(api_key=os.getenv("GEMINI_API_KEY", "your_api_key_here"))
 model = genai.GenerativeModel("gemini-1.5-flash")
 
 # ----------------------------
@@ -33,24 +32,16 @@ c.execute("""CREATE TABLE IF NOT EXISTS chats (
 conn.commit()
 
 # ----------------------------
-# Voice Output (Safe Queue System)
+# Voice Output (Safe Function)
 # ----------------------------
-speech_queue = queue.Queue()
-
-def speech_worker():
-    engine = pyttsx3.init()
-    while True:
-        text = speech_queue.get()
-        if text is None:
-            break
+def speak(text):
+    try:
+        engine = pyttsx3.init()
         engine.say(text)
         engine.runAndWait()
-        speech_queue.task_done()
-
-threading.Thread(target=speech_worker, daemon=True).start()
-
-def speak(text):
-    speech_queue.put(text)
+        engine.stop()
+    except Exception as e:
+        print(f"TTS error: {e}")
 
 # ----------------------------
 # Gemini Chat Function
@@ -138,6 +129,6 @@ c.execute("SELECT timestamp, user_input, bot_reply FROM chats ORDER BY timestamp
 chat_rows = c.fetchall()
 for row in chat_rows:
     ts, u, b = row
-    st.markdown(f"*🧑 You ({ts}):* {u}")
-    st.markdown(f"*🤖 Bot:* {b}")
+    st.markdown(f"🧑 You ({ts}): {u}")
+    st.markdown(f"🤖 Bot: {b}")
     st.markdown("---")
