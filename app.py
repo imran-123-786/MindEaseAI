@@ -1,22 +1,21 @@
 import streamlit as st
 import google.generativeai as genai
 import sqlite3
-import speech_recognition as sr
-import pyttsx3
-import threading
-import queue
-from datetime import datetime
-from dotenv import load_dotenv
+
 import os
 
 # ----------------------------
 # Load API Key Safely
 # ----------------------------
-load_dotenv()  # loads .env file
-api_key = os.getenv("GOOGLE_API_KEY")
+# Use Streamlit secrets instead of dotenv for cloud deployment
+if 'GOOGLE_API_KEY' in st.secrets:
+    api_key = st.secrets['GOOGLE_API_KEY']
+else:
+    # Fallback for local development
+    api_key = os.getenv("GOOGLE_API_KEY")
 
 if not api_key:
-    st.error("❌ API key not found! Please set GOOGLE_API_KEY in .env file.")
+    st.error("❌ API key not found! Please set GOOGLE_API_KEY in Streamlit secrets or environment variables.")
 else:
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel("gemini-1.5-flash")
@@ -41,26 +40,6 @@ c.execute("""CREATE TABLE IF NOT EXISTS chats (
 conn.commit()
 
 # ----------------------------
-# Voice Output (Safe Queue System)
-# ----------------------------
-speech_queue = queue.Queue()
-
-def speech_worker():
-    engine = pyttsx3.init()
-    while True:
-        text = speech_queue.get()
-        if text is None:
-            break
-        engine.say(text)
-        engine.runAndWait()
-        speech_queue.task_done()
-
-threading.Thread(target=speech_worker, daemon=True).start()
-
-def speak(text):
-    speech_queue.put(text)
-
-# ----------------------------
 # Gemini Chat Function
 # ----------------------------
 def ask_gemini(query):
@@ -74,7 +53,7 @@ def ask_gemini(query):
 # Streamlit UI
 # ----------------------------
 st.title("💙 MindEase AI Prototype")
-st.write("Hello baby 😘, welcome to our Generative AI mental wellness assistant!")
+st.write("Hello! Welcome to our Generative AI mental wellness assistant!")
 
 # ----------------------------
 # Mood Tracker
@@ -86,7 +65,6 @@ if st.button("Log Mood"):
     c.execute("INSERT INTO moods (mood) VALUES (?)", (mood,))
     conn.commit()
     st.success(f"Your mood '{mood}' has been logged 💙")
-    speak(f"Your mood {mood} has been logged")
 
 # Show mood history chart
 st.subheader("📊 Your Mood History")
@@ -103,28 +81,15 @@ st.subheader("💬 Talk to MindEase AI")
 
 user_input = st.text_input("💭 Share your thoughts or ask for support:")
 
-# Voice input button
-if st.button("🎤 Speak Instead"):
-    recognizer = sr.Recognizer()
-    mic = sr.Microphone()
-    with mic as source:
-        st.info("Listening... please speak")
-        audio = recognizer.listen(source)
-    try:
-        user_input = recognizer.recognize_google(audio)
-        st.success(f"🗣️ You said: {user_input}")
-    except sr.UnknownValueError:
-        st.warning("❌ Could not understand audio")
-    except sr.RequestError:
-        st.error("⚠️ Speech recognition service error")
-
 # Process chatbot input
 if st.button("Submit"):
     if user_input.strip() == "":
-        st.warning("Please type or speak something first 💡")
+        st.warning("Please type something first 💡")
     else:
-        reply = ask_gemini(user_input)
-        st.success("### 🤖 Gemini’s Response:")
+        with st.spinner("Thinking..."):
+            reply = ask_gemini(user_input)
+        
+        st.success("### 🤖 Gemini's Response:")
         st.write(reply)
 
         # Save to DB
@@ -132,11 +97,10 @@ if st.button("Submit"):
         conn.commit()
 
         # Crisis detection
-        if any(word in user_input.lower() for word in ["suicidal", "end my life", "kill myself"]):
+        crisis_keywords = ["suicidal", "end my life", "kill myself", "want to die", "harm myself"]
+        if any(word in user_input.lower() for word in crisis_keywords):
             st.error("🚨 If you are in crisis, please call your local helpline immediately (e.g., 1800-599-0019 in India).")
-            speak("If you are in crisis, please reach out to your local helpline immediately. You are not alone.")
-
-        speak(reply)
+            st.info("You can also text HOME to 741741 to connect with a crisis counselor in many countries.")
 
 # ----------------------------
 # Show Previous Chat History
@@ -149,3 +113,18 @@ for row in chat_rows:
     st.markdown(f"🧑 You ({ts}): {u}")
     st.markdown(f"🤖 Bot: {b}")
     st.markdown("---")
+
+# ----------------------------
+# Resources Section
+# ----------------------------
+st.markdown("---")
+st.subheader("📚 Mental Health Resources")
+st.write("""
+- National Suicide Prevention Lifeline: 1-800-273-8255 (US)
+- Crisis Text Line: Text HOME to 741741 (US)
+- International Association for Suicide Prevention: https://www.iasp.info/resources/Crisis_Centres/
+- Mental Health America: https://www.mhanational.org/
+""")
+
+# Close database connection when done
+conn.close()
